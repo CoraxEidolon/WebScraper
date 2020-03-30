@@ -2,6 +2,7 @@ class ExtractKeyWord {
     #natural = require('natural');
     #searchWords = [];
     #text = "";
+    #searchThreshold = 0.7;
 
     #NormalizationText = function (textForNormalization) {
         if (typeof textForNormalization !== "string") {
@@ -93,14 +94,14 @@ class ExtractKeyWord {
             const langTokenArr = this.#DefineLanguageText(tokensArr[i]);
             const langToken = langTokenArr[0];
 
-            if(LANG.hasOwnProperty(langToken)){
+            if (LANG.hasOwnProperty(langToken)) {
                 tokensArr[i] = LANG[langToken](tokensArr[i]);
             }
         }
         return tokensArr;
     }
 
-    #CountTfidf = function(tokensArr) {
+    #CountTfidf = function (tokensArr) {
         if (!Array.isArray(tokensArr)) {
             return null;
         }
@@ -128,13 +129,44 @@ class ExtractKeyWord {
         return result;
     }
 
-    #NormalizationValue =  function(val, min, max) { 
-        
-        return (val - min) / (max - min); }
+    #NormalizationValue = function (inputArr) {
+        if (!Array.isArray(inputArr)) {
+            return null;
+        }
+
+        if (inputArr.length <= 1) {
+            return null;
+        }
+
+        const max = inputArr[0].tfidf;
+        const min = inputArr[inputArr.length - 1].tfidf;
+        for (let i = 0; i < inputArr.length; ++i) {
+            inputArr[i].rating = (inputArr[i].tfidf - min) / (max - min);
+        }
+        return inputArr;
+    }
+
+    #NormalizationSearchWords = function () {
+        const t = this.#searchWords;
+        if (this.#searchWords.length === 0) {
+            return null;
+        }
+
+        const resultNormalizationText = [];
+        //Нормализуем все ключевые слова
+        for (let i = 0; i < this.#searchWords.length; ++i) {
+            const tmp = this.#NormalizationText(this.#searchWords[i]);
+            resultNormalizationText.push(tmp);
+        }
+
+        const resultPorterStemmer = this.#PorterStemmer(resultNormalizationText);
+        const resultUniqueArrVal = this.#UniqueArrVal(resultPorterStemmer);
+        return resultUniqueArrVal;
+    }
 
     //#region SearchWords
     AddSearchWordsList(inputArr) {
-        if (typeof inputArr !== "string") {
+        if (!Array.isArray(inputArr)) {
             return;
         }
         this.#searchWords = this.#searchWords.concat(inputArr);
@@ -158,6 +190,25 @@ class ExtractKeyWord {
     }
     //#endregion text
 
+    //#region searchThreshold
+
+    set searchThreshold(inputNum) {
+        if (typeof inputNum !== "number") {
+            return;
+        }
+        if (inputNum > 1 || inputNum < 0) {
+            return;
+        }
+
+        this.#searchThreshold = inputNum;
+    }
+
+    get searchThreshold() {
+        return this.#searchThreshold;
+    }
+
+    //#endregion searchThreshold
+
     GetKeyWordList() {
         const tokenizer = new this.#natural.WordTokenizer();
         const textForSearch = this.#NormalizationText(this.#text);//Нормализуем текст  
@@ -165,18 +216,25 @@ class ExtractKeyWord {
         const tokens = tokenizer.tokenize(textForSearch); //Разбиваем на токены
         const tokensWithoutStopWord = this.#DeleteStopWords(tokens, LANG_TEXT_ARR); //Удаляем стоп слова
         const tokensWordBasis = this.#PorterStemmer(tokensWithoutStopWord); // Стеммер Портера, выделяем основы слов
-        const result = this.#CountTfidf(tokensWordBasis);
-    
-
-        const max = result[0].tfidf;
-        const min = result[result.length-1].tfidf;
-        for (let i = 0; i < result.length; ++i) {
-            result[i].tfidf = this.#NormalizationValue(result[i].tfidf, min, max);
-            console.log(result[i].token + " - " + result[i].tfidf);
+        const resultTfidf = this.#CountTfidf(tokensWordBasis);
+        const resultTfidfNormalizationValue = this.#NormalizationValue(resultTfidf);
+        const normalizationSearchWords = this.#NormalizationSearchWords();
+        const resultKeywords = [];
+        for (let i = 0; i < resultTfidfNormalizationValue.length; ++i) {
+            if (resultTfidfNormalizationValue[i].rating >= this.#searchThreshold) {
+                for (let j = 0; j < normalizationSearchWords.length; ++j) {
+                    if (normalizationSearchWords[j] === resultTfidfNormalizationValue[i].token) {
+                        resultKeywords.push(resultTfidfNormalizationValue[i]);
+                        continue;
+                    }
+                }
+            }
         }
+        return resultKeywords;
     }
 }
 const text = "В магистерской диссертации на тему «Методы и алгоритмы получения неструктурированной информации с веб сайтов путем анализа их исходного кода» рассмотрены проблемы извлечения информации с современных веб-сайтов путем анализа.  С целью решения задачи были проанализированы существующие методы извлечения информации с веб-сайтов, выявлены их преимущества и недостатки, а так же уместность применения того или иного метода в конкретной ситуации. Были разработаны алгоритмы создания карты с веб сайтов. Разработана методика и даны рекомендации по извлечению данных с веб-сайтов. Используя разработанную методику извлечения данных можно добиваться более высоких показателей по извлечению данных с веб-сайтов";
 const extractKeyWordObj = new ExtractKeyWord();
 extractKeyWordObj.text = text;
+extractKeyWordObj.AddSearchWordsList(["извлечение", "вебсайт", "методика", "кот"]);
 extractKeyWordObj.GetKeyWordList();
