@@ -1,17 +1,14 @@
 const WorkWithFiles = new class {
     #fs = require('fs');
 
-
     JSONSaveFromFile(filePath, dataSaveJson) {
         if (!filePath || !dataSaveJson) {
             return;
         }
 
-        if (typeof filePath !== "string") {
-            return;
-        }
+        const dataJson = JSON.stringify(dataSaveJson);
 
-        this.#fs.writeFileSync(filePath, dataSaveJson);
+        this.#fs.writeFileSync(filePath, dataJson);
     }
 
     JSONReadFromFile = function (filePath) {

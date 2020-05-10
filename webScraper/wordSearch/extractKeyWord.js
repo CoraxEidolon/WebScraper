@@ -1,9 +1,13 @@
 class ExtractKeyWord {
     #natural = require('natural');
-    #searchWords = [];
-    #text = "";
-    #searchThreshold = 0.7;
+    #searchWords = []; //массив слов для поиска
+    #text = ""; //Текст в котором будео осуществляться поиск
+    #searchThreshold = 0.7;//Порог уникальности
 
+    /**
+     * Осуществляет нормализацию текста. Возвращает нормализованный текст
+     * @param {string} textForNormalization 
+     */
     #NormalizationText = function (textForNormalization) {
         if (typeof textForNormalization !== "string") {
             return;
@@ -18,6 +22,10 @@ class ExtractKeyWord {
         return result;
     }
 
+    /**
+     * Принимает массив, оставляет только уникальные значения
+     * @param {Array} inputArr 
+     */
     #UniqueArrVal = function (inputArr) {
         if (!Array.isArray(inputArr)) {
             return null;
@@ -25,6 +33,10 @@ class ExtractKeyWord {
         return Array.from(new Set(inputArr));
     }
 
+    /**
+     * Принимает текст, определяет языки содержащиеся в тексте, возвращает массив найденных языков
+     * @param {string} inputText 
+     */
     #DefineLanguageText = function (inputText) {
         const LANG = {
             rus: function (checkText) {
@@ -45,6 +57,11 @@ class ExtractKeyWord {
         return resultLangList;
     }
 
+    /**
+     * Удаляет стоп слова заданных языков из полученного массива токенов
+     * @param {Array} tokensArr - массив токенов (слов)
+     * @param {Array} langArr - массив языков
+     */
     #DeleteStopWords = function (tokensArr, langArr = ["rus"]) {
         if (!Array.isArray(tokensArr)) {
             return null;
@@ -73,12 +90,18 @@ class ExtractKeyWord {
         }
         return result;
     }
-
+   
+    /**
+     * Осуществляет Стеммер Портера. Возвращает обработанный массив токенов
+     * @param {Array} tokensArr 
+     */
     #PorterStemmer = function (tokensArr) {
 
         if (!Array.isArray(tokensArr)) {
             return null;
         }
+        const tokensArrCopy = JSON.parse(JSON.stringify(tokensArr));
+
         const _this = this;
         const LANG = {
             rus: function (inputToken) {
@@ -90,17 +113,24 @@ class ExtractKeyWord {
             }
         }
 
-        for (let i = 0; i < tokensArr.length; ++i) {
-            const langTokenArr = this.#DefineLanguageText(tokensArr[i]);
+        for (let i = 0; i < tokensArrCopy.length; ++i) {
+            const langTokenArr = this.#DefineLanguageText(tokensArrCopy[i]);
             const langToken = langTokenArr[0];
 
             if (LANG.hasOwnProperty(langToken)) {
-                tokensArr[i] = LANG[langToken](tokensArr[i]);
+                tokensArrCopy[i] = LANG[langToken](tokensArrCopy[i]);
             }
         }
-        return tokensArr;
+        return {
+            original: tokensArr,
+            porterStemmer: tokensArrCopy
+        }
     }
 
+    /**
+     * Вычисляет Tf-idf для каждого переданного токена. Возвращает массив токенов с величеной Tf-idf
+     * @param {Array} tokensArr - массив токенов
+     */
     #CountTfidf = function (tokensArr) {
         if (!Array.isArray(tokensArr)) {
             return null;
@@ -129,7 +159,11 @@ class ExtractKeyWord {
         return result;
     }
 
-    #NormalizationValue = function (inputArr) {
+    /**
+     * Производит нормализацию значений Tf-idf 
+     * @param {Array} inputArr - массив токенов с величеной Tf-idf 
+     */
+    #NormalizationValue =  function (inputArr) {
         if (!Array.isArray(inputArr)) {
             return null;
         }
@@ -146,6 +180,9 @@ class ExtractKeyWord {
         return inputArr;
     }
 
+    /**
+     * Производит нормализацию слов для поиска
+     */
     #NormalizationSearchWords = function () {
         const t = this.#searchWords;
         if (this.#searchWords.length === 0) {
@@ -160,8 +197,7 @@ class ExtractKeyWord {
         }
 
         const resultPorterStemmer = this.#PorterStemmer(resultNormalizationText);
-        const resultUniqueArrVal = this.#UniqueArrVal(resultPorterStemmer);
-        return resultUniqueArrVal;
+        return resultPorterStemmer;
     }
 
     //#region SearchWords
@@ -216,15 +252,16 @@ class ExtractKeyWord {
         const tokens = tokenizer.tokenize(textForSearch); //Разбиваем на токены
         const tokensWithoutStopWord = this.#DeleteStopWords(tokens, LANG_TEXT_ARR); //Удаляем стоп слова
         const tokensWordBasis = this.#PorterStemmer(tokensWithoutStopWord); // Стеммер Портера, выделяем основы слов
-        const resultTfidf = this.#CountTfidf(tokensWordBasis);
+        const resultTfidf = this.#CountTfidf(tokensWordBasis.porterStemmer);
         const resultTfidfNormalizationValue = this.#NormalizationValue(resultTfidf);
+        
         const normalizationSearchWords = this.#NormalizationSearchWords();
         const resultKeywords = [];
         for (let i = 0; i < resultTfidfNormalizationValue.length; ++i) {
             if (resultTfidfNormalizationValue[i].rating >= this.#searchThreshold) {
-                for (let j = 0; j < normalizationSearchWords.length; ++j) {
-                    if (normalizationSearchWords[j] === resultTfidfNormalizationValue[i].token) {
-                        resultKeywords.push(resultTfidfNormalizationValue[i]);
+                for (let j = 0; j < normalizationSearchWords.porterStemmer.length; ++j) {
+                    if (normalizationSearchWords.porterStemmer[j] === resultTfidfNormalizationValue[i].token) {
+                        resultKeywords.push(normalizationSearchWords.original[j]);
                         continue;
                     }
                 }
@@ -233,7 +270,7 @@ class ExtractKeyWord {
         return resultKeywords;
     }
 }
-const text = "В магистерской диссертации на тему «Методы и алгоритмы получения неструктурированной информации с веб сайтов путем анализа их исходного кода» рассмотрены проблемы извлечения информации с современных веб-сайтов путем анализа.  С целью решения задачи были проанализированы существующие методы извлечения информации с веб-сайтов, выявлены их преимущества и недостатки, а так же уместность применения того или иного метода в конкретной ситуации. Были разработаны алгоритмы создания карты с веб сайтов. Разработана методика и даны рекомендации по извлечению данных с веб-сайтов. Используя разработанную методику извлечения данных можно добиваться более высоких показателей по извлечению данных с веб-сайтов";
+const text = "Я хочу вам рассказать про своего кота, которого зовут совершенно обычно - Мурзик. Я подобрал его на улице совсем крошечным котёнком, когда шёл из школы домой. Несмотря на свои размеры, этот крошечный комочек обладал весьма громким голосом и ел так, что вскоре стал похож на пушистый шарик с тоненьким хвостиком. Котик очень долго почему-то совсем не рос, и мы уже решили, что, видимо, он какой-нибудь миниатюрной породы, но в какой-то момент он вдруг превратился в большого красавца-кота с умными зелёными глазами. Мой кот очень ласковый, забавный и умный. Он всегда каким-то образом узнаёт, когда я иду со школы. Когда дверь открывается, он выбегает мне навстречу, трётся об мои ноги и громко мяукает, как будто говорит, как сильно он скучал по мне. Он любит играть со мной в прятки и догонялки и всегда меня находит, где бы я ни прятался. Утром кот встает раньше  всех и пытается разбудить кого-нибудь, так он просит, чтобы его покормили. Мой кот, не просто домашнее животное, а член семьи, и я очень его люблю. Уже поздно и мне пора спать, вот и мой любимый Мурзик, как обычно,  тоже укладывается на подушке рядом со мной, громко мурлыча. Спокойной ночи, котик! Завтра нас ждёт новый день.";
 const extractKeyWordObj = new ExtractKeyWord();
 extractKeyWordObj.text = text;
 extractKeyWordObj.AddSearchWordsList(["извлечение", "вебсайт", "методика", "кот"]);
